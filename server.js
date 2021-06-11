@@ -2,8 +2,10 @@ const express = require('express')
 const mongoose = require('mongoose')
 const morgan = require('morgan')
 const bodyParser = require('body-parser')
+const fs = require('fs')
 const cors = require('cors')
 require('dotenv').config()
+
 
 //app 
 
@@ -22,13 +24,12 @@ app.use(morgan("dev"));
 app.use(bodyParser.json({limit:'2mb'}));
 app.use(cors());
 
-// route 
-app.get('/api', (req,res) =>{
-    
-    res.json({
-       data:'hey you hate node api'
-    })
-})
+//routes middleware 
+
+fs.readdirSync('./routes').map((r) =>
+ app.use( '/api', require('./routes/' +r))
+ )
+
 
 //port 
 app.listen(process.env.PORT || port,() => {
