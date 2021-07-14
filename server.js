@@ -14,7 +14,7 @@ const port = 5000;
 // db
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.mc16x.mongodb.net/${process.env.DB_NAME}?retryWrites=true&w=majority`
 mongoose.connect(uri, {useNewUrlParser: true, useCreateIndex: true,
-    useFindAndModify: true, useUnifiedTopology: true})
+    useFindAndModify: false, useUnifiedTopology: true})
 
 .then(() => console.log('DB CONNECTED'))
 .catch(err => console.log(`DB CONNECTION ERR${err}`))
