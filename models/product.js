@@ -1,7 +1,7 @@
 const mongoose = require('mongoose')
 const {ObjectId} = mongoose.Schema;
 
-const productSchema = new mongoose.Schema({
+const ProductSchema = new mongoose.Schema({
     title:{
         type:String,
         trim:true,
@@ -41,12 +41,12 @@ const productSchema = new mongoose.Schema({
        type:Number,
        default:0
    },
-   images:{
+   /*images:{
        type: Array,
-   },
+   },*/
    shipping:{
        type:String,
-       enum:["yes","No"],
+       enum:["Yes","No"],
 
    },
    color:{
