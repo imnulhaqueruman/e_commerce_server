@@ -41,9 +41,9 @@ const ProductSchema = new mongoose.Schema({
        type:Number,
        default:0
    },
-   /*images:{
+   images:{
        type: Array,
-   },*/
+   },
    shipping:{
        type:String,
        enum:["Yes","No"],
