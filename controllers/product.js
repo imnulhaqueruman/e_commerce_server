@@ -43,4 +43,21 @@ exports.read = async(req,res) =>{
    .populate('subs')
    .exec();
    res.json(product);
+};
+
+exports.update= async(req,res) =>{
+   try{
+       if(req.body.title){
+          req.body.slug = slugify(req.body.title)
+       }
+       const updated = await Product.findOneAndUpdate(
+          {slug:req.params.slug}, 
+           req.body,
+           {new:true}
+         ).exec();
+         res.json(update);
+   }catch(err){
+      console.log('Product Update error', err)
+      return res.status(400).send('Product update Failed')
+   }
 }
