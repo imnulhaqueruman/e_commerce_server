@@ -55,9 +55,29 @@ exports.update= async(req,res) =>{
            req.body,
            {new:true}
          ).exec();
-         res.json(update);
+         res.json(updated);
    }catch(err){
       console.log('Product Update error', err)
-      return res.status(400).send('Product update Failed')
+      //return res.status(400).send('Product update Failed')
+      res.status(400).json({
+         err:err.message,
+      });
+   }
+};
+
+exports.list = async(req,res) =>{
+   try{
+      // createdAt updated at desc/asc , 3
+      const{sort,order,limit} = req.body
+      const products = await Product.find({})
+      .populate('category')
+      .populate('subs')
+      .sort([[sort,order]])
+      .limit(limit)
+      .exec();
+      res.json(products);
+   }
+   catch(err){
+      console.log(err)
    }
 }
