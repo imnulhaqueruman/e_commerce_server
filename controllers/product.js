@@ -1,5 +1,6 @@
 const Product = require('../models/product');
 const slugify = require('slugify');
+const User = require('../models/user')
 
 exports.create = async(req,res) =>{
    try{
