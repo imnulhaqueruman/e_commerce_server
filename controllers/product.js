@@ -113,37 +113,54 @@ exports.productsCount = async(req,res) =>{
 }
 
 exports.productStar = async(req,res) =>{
-   const product = await Product.findById(req.params.productId).exec()
-   const user = await User.findOne({email:req.user.email}).exec()
-   const{star} = req.body
-
-   // who is updating ?
-   // check if currently logged in user have already added rating to this product?
+   try{
+      const product = await Product.findById(req.params.productId).exec()
+      const user = await User.findOne({email:req.user.email}).exec()
+      const{star} = req.body
    
-   let existingRatingObject = product.ratings.find((e) => e.postedBy.toString() === user._id.toString());
-
-   // if user haven't left rating yet, push it
-   if(existingRatingObject === undefined){
-     let ratingAdded = await Product.findByIdAndUpdate(product._id,{
-        $push:{ ratings: {star:star, postedBy: user._id} },
-     },
-     {
-        new:true
-     }).exec();
-     console.log('ratings added',ratingAdded)
-     res.json(ratingAdded)
-
-   } else{
-   // if user have already left rating , update it
-    const ratingUpdated = await Product.updateOne(
-       {ratings : {$elementMatch: existingRatingObject},},
-       { $set: {'ratings.$.star': star} },
-       {new:true}
-    ).exec();
-    console.log('ratingUpdated', ratingUpdated)
-    res.json(ratingUpdated)
+      // who is updating ?
+      // check if currently logged in user have already added rating to this product?
+      
+      let existingRatingObject = await product.ratings.find((e)=> e.postedBy.toString() === user._id.toString());
+   
+      // if user haven't left rating yet, push it
+      if(existingRatingObject === undefined){
+        let ratingAdded = await Product.findByIdAndUpdate(product._id,{
+           $push:{ ratings: {star:star, postedBy: user._id} },
+        },
+        {
+           new:true
+        }).exec();
+        console.log('ratings added',ratingAdded)
+        res.json(ratingAdded)
+   
+      } else{
+      // if user have already left rating , update it
+       const ratingUpdated = await Product.updateOne(
+          {ratings : {$elemMatch: existingRatingObject},},
+          { $set: {'ratings.$.star': star} },
+          {new:true}
+       ).exec();
+       console.log('ratingUpdated', ratingUpdated)
+       res.json(ratingUpdated)
+      }
+   } catch(err){
+      console.log(err)
    }
 
- 
+};
+exports.listRelated = async(req,res) =>{
+   const product = await Product.findById(req.params.productId).exec();
+   const related = await Product.find({
+      _id:{$ne : product._id},
+      category:product.category.name,
+
+   })
+      .limit(3)
+      .populate("category")
+      .populate("subs")
+      .populate("postedBy")
+      .exec()
+   res.json(related)
 
 }
