@@ -18,7 +18,7 @@ exports.userCart = async(req,res) =>{
 
     for(let i = 0; i < cart.length; i++){
         let object ={}
-        object.product = cart[i],_id;
+        object.product = cart[i]._id;
         object.count = cart[i].count
         object.color = cart[i].color
         // get price for creating total 
@@ -39,10 +39,21 @@ exports.userCart = async(req,res) =>{
 
     let newCart = await new Cart({
         products,
-        carTotal,
+        cartTotal,
         orderedBy: user._id
     }).save();
 
     console.log('new cart--->', newCart);
     res.json({ok : true});
+};
+
+exports.getUserCart = async(req,res) =>{
+    const user = await User.findOne({email:req.user.email}).exec();
+    let cart = await Cart.findOne({orderedBy: user._id})
+    .populate(
+        'products.product', 
+        "_id title price totalAfterDiscount"
+        ).exec();
+    const {products,cartTotal,totalAfterDiscount} = cart;
+    res.json({products,cartTotal,totalAfterDiscount}) // req data
 }

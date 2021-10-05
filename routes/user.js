@@ -6,9 +6,10 @@ const {authCheck} = require('../middlewares/auth')
 
 // controllers
 
-const {userCart} = require("../controllers/user")
+const {userCart,getUserCart} = require("../controllers/user")
 
 router.post('/user/cart', authCheck,userCart); // save Cart
+router.get('/user/cart', authCheck,getUserCart)  // get cart
 
 // router.get('/user', (req,res) =>{
 //     res.json({
