@@ -104,6 +104,8 @@ exports.applyCouponToUserCart = async(req,res) =>{
 
 exports.createOrder = async(req,res) =>{
     const {paymentIntent} = req.body.stripeResponse;
+    console.log(req.body)
+    
     const user = await User.findOne({email:req.user.email}).exec();
     
     let {products} = await Cart.findOne({orderedBy: user._id}).exec()
@@ -113,6 +115,18 @@ exports.createOrder = async(req,res) =>{
         orderedBy: user._id,
 
     }).save();
+    // decrement quantity increment sold 
+    let bulkOption = products.map((item) =>{
+        return{
+            updateOne:{
+             filter:{_id:item.product._id}, // important item.product 
+             update:{$inc:{quantity: -item.count, sold: +item.count}},
+            }
+        }
+    })
+   let updated = await  Product.bulkWrite(bulkOption, {new:true})
+   console.log('Product quantity -- and sold +++', updated)
+
    console.log('New order saved', newOrder)
     res.json({ok:true});
 
