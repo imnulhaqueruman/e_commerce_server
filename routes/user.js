@@ -6,12 +6,14 @@ const {authCheck} = require('../middlewares/auth')
 
 // controllers
 
-const {userCart,getUserCart,emptyCart,saveAddress, applyCouponToUserCart} = require("../controllers/user")
+const {userCart,getUserCart,emptyCart,saveAddress, applyCouponToUserCart,createOrder} = require("../controllers/user")
 
 router.post('/user/cart', authCheck,userCart); // save Cart
 router.get('/user/cart', authCheck,getUserCart)  // get cart
 router.delete('/user/cart', authCheck,emptyCart); // empty cart
 router.post('/user/address', authCheck,saveAddress)
+
+router.post('/user/order', authCheck,createOrder)
 // coupon 
 router.post('/user/cart/coupon', authCheck, applyCouponToUserCart)
 // router.get('/user', (req,res) =>{
