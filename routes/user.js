@@ -6,7 +6,7 @@ const {authCheck} = require('../middlewares/auth')
 
 // controllers
 
-const {userCart,getUserCart,emptyCart,saveAddress, applyCouponToUserCart,createOrder,orders} = require("../controllers/user")
+const {userCart,getUserCart,emptyCart,saveAddress, applyCouponToUserCart,createOrder,orders,addToWishList,wishlist,removeFromWishList} = require("../controllers/user")
 
 router.post('/user/cart', authCheck,userCart); // save Cart
 router.get('/user/cart', authCheck,getUserCart)  // get cart
@@ -22,6 +22,10 @@ router.post('/user/cart/coupon', authCheck, applyCouponToUserCart)
 //        data:'hey you hate user api'
 //     })
 // });
+// wishlist
+router.post('/user/wishlist',authCheck,addToWishList)
+router.get('/user/wishlist', authCheck, wishlist)
+router.put('/user/wishlist/:productId', authCheck, removeFromWishList)
 
 
 module.exports = router
