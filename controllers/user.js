@@ -150,12 +150,12 @@ exports.addToWishList = async(req,res) =>{
     res.json({ok: true})
 }
 exports.wishlist = async(req,res) =>{
-    const list = await User.findOne({email:req.user.email}).
-    select('wishlist').
-    populate('wishlist').
-    exec()
+    const list = await User.findOne({email:req.user.email})
+    .select("wishlist")
+    .populate("wishlist")
+    .exec();
 
-    res.json(list);
+ res.json(list);
 }
 exports.removeFromWishList = async(req,res) =>{
     const {productId} = req.params;
