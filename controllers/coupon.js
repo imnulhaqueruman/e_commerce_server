@@ -24,7 +24,8 @@ exports.remove = async(req,res) =>{
 exports.list = async(req,res) =>{
  try{
     res.json(await Coupon.find({}).sort({createdAt:-1}).exec())
- }catch (err) {
-     consoles.log(err)
- }
+}catch (err) {
+    console.log(err)
+    res.status(500).json({err: 'Failed to list coupons'})
+}
 }

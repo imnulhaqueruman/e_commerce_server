@@ -10,6 +10,9 @@ const userSchema = new mongoose.Schema(
             required: true,
             index: true,
         },
+        password: {
+            type: String,
+        },
         role:{
             type:String,
             default:'subscribe',

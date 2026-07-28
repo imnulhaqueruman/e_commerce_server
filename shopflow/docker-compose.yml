@@ -1,0 +1,110 @@
+services:
+  mongo:
+    image: mongo:6
+    container_name: shopflow-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - shopflow-mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shopflow_net
+
+  user-service:
+    build: ./user-service
+    container_name: shopflow-user
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/shopflow
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=4001
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shopflow_net
+
+  product-service:
+    build: ./product-service
+    container_name: shopflow-product
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/shopflow
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=4002
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shopflow_net
+
+  inventory-service:
+    build: ./inventory-service
+    container_name: shopflow-inventory
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/shopflow
+      - JWT_SECRET=${JWT_SECRET}
+      - PORT=4003
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - shopflow_net
+
+  frontend:
+    build: ./frontend
+    container_name: shopflow-frontend
+    restart: unless-stopped
+    networks:
+      - shopflow_net
+
+  nginx:
+    image: nginx:alpine
+    container_name: shopflow-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      user-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    networks:
+      - shopflow_net
+
+networks:
+  shopflow_net:
+    driver: bridge
+
+volumes:
+  shopflow-mongo-data:

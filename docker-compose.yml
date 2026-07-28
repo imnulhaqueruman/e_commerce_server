@@ -1,0 +1,14 @@
+services:
+  mongo:
+    image: mongo:6
+    container_name: ecommerce-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: ${DB_NAME:-ecommerce}
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:

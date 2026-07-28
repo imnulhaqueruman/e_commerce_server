@@ -20,14 +20,16 @@ exports.authCheck = async(req,res,next) =>{
 exports.adminCheck = async(req,res,next) =>{
     const{email} = req.user;
     console.log(req.user)
-    const adminUser = await User.findOne({email}).exec()
-    if(adminUser.role !== 'admin'){
-        res.status(403).json({
-            err:'Admin resource.Access denied'
-        })
-    }
-    else{
+    try {
+        const adminUser = await User.findOne({email}).exec()
+        if(!adminUser || adminUser.role !== 'admin'){
+            return res.status(403).json({
+                err:'Admin resource. Access denied'
+            })
+        }
         next();
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({err: 'Failed to verify admin'});
     }
-
 }

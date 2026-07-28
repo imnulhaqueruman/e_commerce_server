@@ -5,17 +5,19 @@ const router = express.Router();
 // middleWares
 
 const {authCheck,adminCheck} = require('../middlewares/auth')
+const {requireAuth,requireAdmin} = require('../middlewares/jwt')
 
 // controller
-const {create, remove, list} = require('../controllers/coupon')
+const {create, remove, list, read, update} = require('../controllers/sub')
 
 
 
 //routes
-router.post('/coupon',authCheck,adminCheck,create);
-router.get('/coupons',list);
-
-router.delete('/coupon/:couponId',authCheck,adminCheck,remove);
+router.post('/sub',requireAuth,requireAdmin,create);
+router.get('/subs',list);
+router.get('/sub/:slug',read);
+router.put('/sub/:slug',requireAuth,requireAdmin,update);
+router.delete('/sub/:slug',requireAuth,requireAdmin,remove);
 
 
 module.exports = router
