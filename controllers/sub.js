@@ -1,6 +1,21 @@
+/**
+ * Sub-category CRUD. Mirror of `controllers/category.js` but the slug
+ * is namespaced by an additional required `parent` ObjectId pointing at
+ * the parent Category.
+ *
+ * `routes/sub.js` mounts mutating endpoints behind
+ * `requireAuth, requireAdmin`; reads are public.
+ */
 const Sub = require('../models/sub');
 const slugify = require('slugify')
 const Product = require('../models/product')
+/**
+ * POST /api/sub (admin)
+ * Body: `{ name, parent }` — `parent` is the parent Category's ObjectId.
+ * Slug is auto-generated from `name` and is unique only within the
+ * schema (see `models/sub.js`); two subs in different parents can share
+ * a slug today — keep that in mind if you ever add a sub-by-slug route.
+ */
 exports.create = async(req,res) =>{
     try{
         const {name,parent} = req.body
@@ -12,10 +27,19 @@ exports.create = async(req,res) =>{
     }   
 }
 
+/**
+ * GET /api/subs — public. Newest first, no pagination.
+ */
 exports.list = async(req,res) =>{
     res.json(await Sub.find({}).sort({createdAt:-1}).exec());
 }
 
+/**
+ * GET /api/sub/:slug — public.
+ * Returns the sub doc and all products whose `subs` array includes it.
+ * Same caveat as `category.read`: no try/catch — failures will hang
+ * the request. Wrap before this becomes a hot path.
+ */
 exports.read = async(req,res) =>{
     let sub = await Sub.findOne({slug: req.params.slug}).exec();
     const products = await Product.find({subs:sub})
@@ -27,6 +51,13 @@ exports.read = async(req,res) =>{
     })
 }
 
+/**
+ * PUT /api/sub/:slug (admin)
+ * Body: `{ name, parent }`. Both fields are updated; slug is regenerated
+ * from the new name. Switching parents is allowed — useful for taxonomy
+ * reorganizations, but be aware it changes which products show up under
+ * the sub via the `subs` reference array on the Product.
+ */
 exports.update = async(req,res) =>{
     const {name,parent} = req.body; 
     try{
@@ -41,6 +72,11 @@ exports.update = async(req,res) =>{
     }
 }
 
+/**
+ * DELETE /api/sub/:slug (admin)
+ * No cascade; products keep a reference to this sub's ObjectId in their
+ * `subs` array until manually cleaned up.
+ */
 exports.remove = async(req,res) =>{
     try{
        const deleted = await Sub.findOneAndDelete({slug: req.params.slug});

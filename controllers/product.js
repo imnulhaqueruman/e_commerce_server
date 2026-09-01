@@ -1,7 +1,28 @@
+/**
+ * Product CRUD + paginated list + per-field filter dispatch.
+ *
+ * IMPORTANT -- `price` is stored as a **String** in the schema, not a
+ * Number. Any code path that does price math must `parseFloat(price)`
+ * (or `Number()`) before arithmetic. The shopping-cart controller
+ * (`controllers/user.js#userCart`) handles that conversion; this file
+ * generally treats price as opaque text on read paths and lets the
+ * client format it.
+ *
+ * Products are addressed by `slug` (URL-friendly), not `_id`. `slug` is
+ * derived server-side from `title` on create/update; never trust a
+ * client-supplied slug.
+ */
 const Product = require('../models/product');
 const slugify = require('slugify');
 const User = require('../models/user')
 
+/**
+ * POST /api/product (admin)
+ * Body: full product document (title, description, price, quantity, ...).
+ * - Slug is auto-generated from `title` via `slugify`.
+ * - On validation error, returns 400 with `{ err: <mongoose-message> }`
+ *   so the admin form can surface the specific failure.
+ */
 exports.create = async(req,res) =>{
    try{
       console.log(req.body);
@@ -17,6 +38,13 @@ exports.create = async(req,res) =>{
    }
 };
 
+/**
+ * GET /api/products/:count
+ * Returns the most recent `count` products (default ordering by createdAt
+ * desc). `:count` is parsed as `parseInt` -- anything non-numeric becomes
+ * `NaN`, which Mongoose treats as "no limit". Prefer the paginated
+ * `exports.list` for any UI that needs predictable page sizes.
+ */
 exports.listAll = async(req,res) =>{
    let products = await Product.find({})
    .limit(parseInt(req.params.count))
@@ -27,6 +55,12 @@ exports.listAll = async(req,res) =>{
    res.json(products);
 }
 
+/**
+ * DELETE /api/product/:slug (admin)
+ * Note: `findOneAndRemove` is the legacy Mongoose 5 name; in Mongoose 7+
+ * it's `findOneAndDelete`. This codebase pins mongoose@5 so both work,
+ * but new code should use the `*AndDelete` form.
+ */
 exports.remove = async(req,res) =>{
    try{
         const deleted = await Product.findOneAndRemove({
@@ -38,6 +72,12 @@ exports.remove = async(req,res) =>{
       return res.status(400).send('Product delete failed')
    }
 };
+/**
+ * GET /api/product/:slug -- public.
+ * Returns the product doc with `category` and `subs` populated. No
+ * `try/catch` here -- if Mongo throws, the request hangs (see CLAUDE.md
+ * for the broader pattern in this codebase).
+ */
 exports.read = async(req,res) =>{
    const product = await Product.findOne({ slug: req.params.slug})
    .populate('category')
@@ -46,6 +86,13 @@ exports.read = async(req,res) =>{
    res.json(product);
 };
 
+/**
+ * PUT /api/product/:slug (admin)
+ * Body: any subset of product fields. If `title` is included, the slug
+ * is regenerated. Be aware that changing the slug here will 404 any
+ * open client tab still pointing at the old slug -- admin form should
+ * warn before submitting a title change.
+ */
 exports.update= async(req,res) =>{
    try{
        if(req.body.title){
@@ -66,6 +113,12 @@ exports.update= async(req,res) =>{
    }
 };
 
+// The `exports.list` handler below is the paginated variant. The
+// unpaginated version is preserved above for reference but is no
+// longer wired up by `routes/product.js`. If you need an
+// unpaginated "show me everything" endpoint, mount this commented
+// variant under a new route -- do not uncomment it here without
+// updating the route file too.
 // without pagination 
 /*exports.list = async(req,res) =>{
    try{
@@ -84,6 +137,16 @@ exports.update= async(req,res) =>{
    }
 }*/
 
+/**
+ * POST /api/products
+ * Body: `{ sort, order, page? }`. Hardcoded `perPage = 3` -- bump this
+ * when the product grid moves beyond the demo data set; consider
+ * making it part of the request body once you do.
+ *
+ * Returns `perPage` products starting at `(page-1) * perPage`, sorted
+ * by `[[sort, order]]` (e.g. `[['createdAt', 'desc']]`).
+ */
+// with pagination
 // with pagination
 exports.list = async(req,res) =>{
    console.table(req.body)
@@ -107,11 +170,29 @@ exports.list = async(req,res) =>{
    }
 }
 
+/**
+ * GET /api/products/total -- public.
+ * Returns the estimated document count for the Product collection.
+ * Uses `estimatedDocumentCount` (fast, uses collection metadata) rather
+ * than `countDocuments` (accurate but slow) -- fine for the dashboard's
+ * "N products" label. Switch to `countDocuments` if you ever need exact
+ * numbers after concurrent inserts/deletes.
+ */
 exports.productsCount = async(req,res) =>{
    let total = await Product.find({}).estimatedDocumentCount().exec();
    res.json(total);
 }
 
+/**
+ * PUT /api/product/star/:productId (logged-in user)
+ * Body: `{ star }` (1-5). Inserts a new rating if the user has none on
+ * this product yet; otherwise updates their existing rating in place.
+ *
+ * Identifies the user by `req.user.email` (set by `requireAuth`). The
+ * lookup via `Product.findById` + `product.ratings.find(...)` is O(ratings)
+ * per call -- fine at the demo scale, but if ratings grow past hundreds
+ * per product, switch to `Product.findOneAndUpdate({_id, 'ratings.postedBy': user._id}, ...)`.
+ */
 exports.productStar = async(req,res) =>{
    try{
       const product = await Product.findById(req.params.productId).exec()
@@ -149,6 +230,13 @@ exports.productStar = async(req,res) =>{
    }
 
 };
+/**
+ * GET /api/product/related/:productId -- public.
+ * Returns up to 3 products in the same category, excluding the source
+ * product. Comparison uses `product.category.name` (a populated string),
+ * not the ObjectId -- relies on `category` being populated upstream.
+ * Has no try/catch; hangs on DB error.
+ */
 exports.listRelated = async(req,res) =>{
    const product = await Product.findById(req.params.productId).exec();
    const related = await Product.find({
@@ -164,9 +252,17 @@ exports.listRelated = async(req,res) =>{
    res.json(related)
 
 }
+// The 7 `handle*` helpers below are dispatched by `searchFilters` based
+// on which keys are present in `req.body`. They all `.populate()` the
+// same three references (`category`, `subs`, `postedBy`) -- keep that
+// shape consistent when adding new handlers so the client doesn't have
+// to defend against missing fields.
 // search // Filter
 
-  const handleQuery = async(req,res,query) =>{
+ // Free-text search via Mongo's `$text` index. Requires the Product
+// schema to declare a text index -- see `models/product.js`. Returns
+// results sorted by relevance (the default for $text queries).
+ const handleQuery = async(req,res,query) =>{
    const products = await Product.find({$text: { $search: query}})
       .populate('category','_id name')
       .populate('subs','_id name')
@@ -175,6 +271,12 @@ exports.listRelated = async(req,res) =>{
    res.json(products);
 }
 
+// `price` is `[min, max]` (inclusive on both ends). Uses `$gte`/`$lte`.
+// Because Product.price is a String in the schema, the comparison is
+// lexicographic -- works for fixed-decimal strings (e.g. "12.99") but
+// not for unsorted formats ("5", "100.00" -> "5" sorts after "100").
+// Acceptable for this app's price entry pattern; document the
+// assumption if you change the input format.
 const handlePrice = async(req,res,price) =>{
     try{
        let products = await Product.find({
@@ -193,6 +295,8 @@ const handlePrice = async(req,res,price) =>{
        console.log(err)
     }
 }
+// Filters by `category` ObjectId directly (no populate here). The
+// client must send the ObjectId, not the slug, for this handler.
 const handleCategory = async(req,res,category) =>{
    try{
       let products = await Product.find({category})
@@ -207,6 +311,12 @@ const handleCategory = async(req,res,category) =>{
       console.log(err)
    }
 }
+// Filters products whose *floor-average* rating equals `stars`. Uses
+// `$project` + `$floor` + `$avg` aggregation, then a second `find` to
+// hydrate the matching ids. Callback-style API (mongoose@5) -- fine
+// here, but consider migrating to await for any new handlers.
+//
+// Limit 12 keeps the second-stage `Product.find` cheap.
 const  handleStars = (req,res,stars) =>{
    Product.aggregate([
       {
@@ -234,6 +344,8 @@ const  handleStars = (req,res,stars) =>{
    });
 
 };
+// Filters by `subs` ObjectId membership (`subs` is an array on the
+// schema). Client must send the sub ObjectId.
 const handleSub = async(req,res,sub) =>{
    const products = await Product.find({subs:sub})
    .populate('category','_id name')
@@ -242,6 +354,8 @@ const handleSub = async(req,res,sub) =>{
    .exec();
    res.json(products);
 }
+// Boolean filter on the `shipping` field (e.g. "Yes"/"No" depending on
+// what the admin form stores).
 const handleShipping = async(req,res,shipping) =>{
   const products = await Product.find({shipping})
   .populate('category','_id name')
@@ -250,6 +364,7 @@ const handleShipping = async(req,res,shipping) =>{
   .exec();
   res.json(products)
 }
+// Exact-match filter on the `color` field.
 const handleColor = async(req,res,color) =>{
    const products = await Product.find({color})
   .populate('category','_id name')
@@ -258,6 +373,7 @@ const handleColor = async(req,res,color) =>{
   .exec();
   res.json(products)
 }
+// Exact-match filter on the `brand` field.
 const handleBrand = async(req,res,brand) =>{
    const products = await Product.find({brand})
   .populate('category','_id name')
@@ -266,6 +382,16 @@ const handleBrand = async(req,res,brand) =>{
   .exec();
   res.json(products)
 }
+/**
+ * POST /api/search/filters -- public.
+ * Body: any subset of `{ query, price, category, stars, sub, shipping, color, brand }`.
+ *
+ * IMPORTANT -- the dispatch is sequential `await` calls, and only the
+ * FIRST matching handler responds to the client. If `query` and `price`
+ * are both present, `query` wins and `price` is ignored. This is a known
+ * limitation of the current shape; combine filters by either composing
+ * a single Mongo `$and` here or by orchestrating on the client.
+ */
 exports.searchFilters = async(req,res) =>{
           const {query,price,category,stars,sub,shipping,color, brand} = req.body;
 

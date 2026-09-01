@@ -1,0 +1,231 @@
+name: CI/CD
+
+# Forward Development pipeline:
+#   PR/feature -> lint + unit tests + docker build
+#   develop    -> all of the above + shopflow smoke -> deploy staging
+#   main tag   -> all of the above                -> deploy prod
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop, main]
+    tags: ["v*.*.*"]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/e_commerce_server
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Static checks — every PR and push.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint (root + client)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install root
+        run: npm ci
+      - name: Install client
+        working-directory: client
+        run: npm ci
+      - name: Lint client
+        working-directory: client
+        run: npm run lint
+
+  # ---------------------------------------------------------------------------
+  # 2. Root API unit tests — mongodb-memory-server is already a devDep.
+  # ---------------------------------------------------------------------------
+  test-server:
+    name: Test (root API, Jest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run Jest
+        run: npm test
+        env:
+          USE_MEMORY_MONGO: "1"
+          JWT_SECRET: ci-jwt-secret
+          Stripe_Secret: sk_test_ci
+          CLOUDINARY_CLOUD_NAME: ci
+          CLOUDINARY_API_KEY: ci
+          CLOUDINARY_API_SECRET: ci
+
+  # ---------------------------------------------------------------------------
+  # 3. Client unit tests (Vitest) + typecheck via tsc -b during build.
+  # ---------------------------------------------------------------------------
+  test-client:
+    name: Test (client, Vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - working-directory: client
+        run: npm ci
+      - working-directory: client
+        run: npm test
+
+  # ---------------------------------------------------------------------------
+  # 4. Shopflow microservices smoke test — only on develop/main/tags to keep
+  #    PRs fast. Boots the gateway and curls the product-service route.
+  # ---------------------------------------------------------------------------
+  test-shopflow:
+    name: Smoke (shopflow microservices)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bring up shopflow stack
+        working-directory: shopflow
+        run: docker compose up -d --build
+      - name: Wait for gateway
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8080 >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          echo "Gateway never became ready" >&2
+          docker compose ps >&2
+          exit 1
+      - name: Probe product-service through gateway
+        run: curl -fsS http://localhost:8080/api/products | head -c 200
+      - name: Tear down
+        working-directory: shopflow
+        if: always()
+        run: docker compose down -v
+
+  # ---------------------------------------------------------------------------
+  # 5. Build & publish Docker images for the root API and client.
+  #    Depends on every test job so a green image always means a green repo.
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Docker build & push
+    runs-on: ubuntu-latest
+    needs: [lint, test-server, test-client, test-shopflow]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          SHA=$(echo "${{ github.sha }}" | cut -c1-12)
+          BRANCH=$(echo "${{ github.ref_name }}" | sed 's|/|-|g')
+          echo "sha=${SHA}"        >> "$GITHUB_OUTPUT"
+          echo "branch=${BRANCH}"  >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push API image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-api:${{ steps.tags.outputs.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-api:${{ steps.tags.outputs.branch }}
+            ${{ steps.tags.outputs.version && format('{0}/{1}-api:{2}', env.REGISTRY, env.IMAGE_PREFIX, steps.tags.outputs.version) || '' }}
+
+      - name: Build & push client image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./client
+          file: ./client/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-client:${{ steps.tags.outputs.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-client:${{ steps.tags.outputs.branch }}
+
+      - name: Build (no push) on PRs
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: ${{ env.IMAGE_PREFIX }}-api:pr-${{ steps.tags.outputs.sha }}
+
+  # ---------------------------------------------------------------------------
+  # 6. Deploy staging on develop, prod on main tag.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy ${{ matrix.env }}
+    runs-on: ubuntu-latest
+    needs: docker
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: staging
+            host_secret: DEPLOY_HOST_STAGING
+            key_secret: DEPLOY_SSH_KEY_STAGING
+            host_known_secret: DEPLOY_KNOWN_HOSTS_STAGING
+            compose_file: docker-compose.staging.yml
+            ref: develop
+          - env: prod
+            host_secret: DEPLOY_HOST
+            key_secret: DEPLOY_SSH_KEY
+            host_known_secret: DEPLOY_KNOWN_HOSTS
+            compose_file: docker-compose.prod.yml
+            ref: main
+    if: |
+      (matrix.env == 'staging' && github.ref == 'refs/heads/develop') ||
+      (matrix.env == 'prod' && startsWith(github.ref, 'refs/tags/v'))
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select image tag
+        id: img
+        run: |
+          SHA=$(echo "${{ github.sha }}" | cut -c1-12)
+          if [[ "${{ matrix.env }}" == "staging" ]]; then
+            TAG=$SHA
+          else
+            TAG=${{ github.ref_name }}
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets[matrix.host_secret] }}
+          username: ${{ secrets.DEPLOY_USER || 'deploy' }}
+          key: ${{ secrets[matrix.key_secret] }}
+          known_hosts: ${{ secrets[matrix.host_known_secret] }}
+          script: |
+            set -euo pipefail
+            cd /srv/e_commerce_server
+            export API_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-api:${{ steps.img.outputs.tag }}
+            export CLIENT_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-client:${{ steps.img.outputs.tag }}
+            docker compose -f ${{ matrix.compose_file }} pull
+            docker compose -f ${{ matrix.compose_file }} up -d --remove-orphans
+            docker image prune -f
+            echo "Deployed ${{ matrix.env }} (${{ steps.img.outputs.tag }})"
