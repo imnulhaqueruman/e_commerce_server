@@ -1,3 +1,15 @@
+/**
+ * Admin-only endpoints for the dashboard.
+ *
+ * Routes mount with `requireAuth, requireAdmin` (see `routes/admin.js`) so
+ * `req.user.email` and `req.user.role === 'admin'` are guaranteed here.
+ *
+ * Status transitions for `Order.orderStatus` are whitelisted via
+ * `ALLOWED_STATUSES` to keep the dashboard UI and DB in sync.
+ *
+ * NOTE: The `stripe` import here is used only by `refundOrder`; it will be
+ * removed during the Stripe -> bKash migration.
+ */
 const Order = require('../models/order');
 const Product = require('../models/product');
 const Coupon = require('../models/coupon');
@@ -12,6 +24,12 @@ const ALLOWED_STATUSES = new Set([
   'Refunded',
 ]);
 
+/**
+ * GET /admin/orders
+ * Returns every order newest-first, with each line's product embedded
+ * (only `title`, `slug`, `price`, `images` are projected for performance).
+ * `.lean()` skips Mongoose hydration since the dashboard just renders JSON.
+ */
 exports.orders = async (req, res) => {
   try {
     const all = await Order.find({})
@@ -25,6 +43,13 @@ exports.orders = async (req, res) => {
   }
 };
 
+/**
+ * PUT /admin/order-status
+ * Body: `{ orderId, orderStatus }`.
+ * - 400 if either field is missing or `orderStatus` is not in the whitelist.
+ * - 404 if the orderId doesn't resolve.
+ * Returns the updated order document.
+ */
 exports.orderStatus = async (req, res) => {
   try {
     const { orderId, orderStatus } = req.body || {};
@@ -228,6 +253,17 @@ exports.stats = async (req, res) => {
 
 // POST /admin/orders/:orderId/refund
 // Refunds the PaymentIntent attached to the order and marks it as Refunded.
+/**
+ * POST /admin/orders/:orderId/refund
+ * Calls Stripe's `refunds.create` against the PaymentIntent stored on the
+ * order, then flips `orderStatus` to `'Refunded'`.
+ * - 400 if the order is already refunded or has no paymentIntent on file.
+ * - 400 on `StripeInvalidRequestError` (surfaced message for the UI).
+ * - 500 on any other failure.
+ *
+ * The `orderStatus === 'Refunded'` guard makes this safe to retry — the
+ * second call short-circuits before contacting Stripe.
+ */
 exports.refundOrder = async (req, res) => {
   try {
     const { orderId } = req.params;

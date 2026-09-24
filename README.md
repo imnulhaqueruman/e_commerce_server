@@ -1,6 +1,11 @@
 # e_commerce_server
 
+![CI/CD](https://github.com/imnulhaqueruman/e_commerce_server/actions/workflows/ci.yml/badge.svg)
+
 Node.js + Express + MongoDB API for the e-commerce app.
+
+For the CI/CD pipeline (Forward Development flow, image tagging, secrets,
+rollback procedure) see **[CI_CD.md](./CI_CD.md)**.
 
 ## Prerequisites
 
@@ -33,3 +38,20 @@ won't 404 on a buffering timeout.
 docker compose down           # keep data
 docker compose down -v        # also wipe the `mongo-data` volume
 ```
+
+## CI/CD (Forward Development)
+
+Every push moves the artifact forward through tested gates — no manual step
+required to ship. The pipeline lives in `.github/workflows/ci.yml`.
+
+| Branch / Tag | Gates run | Deploys to |
+|---|---|---|
+| PR / `feature/*` | lint + Jest (root) + Vitest (client) + Docker build | — |
+| `develop` | all of the above + shopflow microservices smoke | staging (via `deploy/staging.yml`) |
+| `main` (tag `v*`) | all of the above | prod (via `deploy/prod.yml`) |
+
+Required repo secrets: `JWT_SECRET`, `Stripe_Secret`, `CLOUDINARY_*`, and
+for deploy: `DEPLOY_HOST[_STAGING]`, `DEPLOY_SSH_KEY[_STAGING]`,
+`DEPLOY_KNOWN_HOSTS[_STAGING]`. PRs build images but never push; pushes
+publish to GHCR as `ghcr.io/<owner>/e_commerce_server-api` and
+`…-client` tagged with the short SHA and branch name.
