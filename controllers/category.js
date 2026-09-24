@@ -17,14 +17,14 @@ const slugify = require('slugify')
  * Body: `{ name }`. The slug is derived server-side — never trust a
  * client-supplied slug.
  */
-exports.create = async(req,res) =>{
+exports.create = async(req,res)
     try{
         const {name} = req.body
         const category = await new Category({name, slug: slugify(name)}).save();
         res.json(category);
     }catch(err){
         console.log(err)
-        res.status(400).send('Create Category failed')
+        res.status(400).send('Create 
     }   
 }
 
