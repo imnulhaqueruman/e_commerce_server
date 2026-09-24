@@ -14,14 +14,14 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/e_commerce_server
+  IMAGE_PREFIX: ${{ github.repository_owner }}
 
 jobs:
   # ---------------------------------------------------------------------------
   # 1. Static checks — every PR and push.
   # ---------------------------------------------------------------------------
   lint:
-    name: Lint (root + client)
+    nament (root + client)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
