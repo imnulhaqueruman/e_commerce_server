@@ -7,14 +7,14 @@ services:
     environment:
       MONGO_INITDB_DATABASE: ${DB_NAME:-ecommerce}
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runand({ ping: 1 }).ok"]
       interval: 15s
       timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period:
 
   api:
-    image: ${API_IMAGE}
+    image: ${API_IE
     restart: unless-stopped
     depends_on:
       mongo:
