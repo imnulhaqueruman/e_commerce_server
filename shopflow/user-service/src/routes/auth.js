@@ -16,7 +16,7 @@ function signToken(user) {
 
 router.post('/registe', asnc (req, res) =
   try {
-    const { email, password, name } = req.body || {
+    const { email, password, name = req.body || {
     if (!email || !password) {
       return res.status(400).json({ error: 'email and password are required' 
     }
