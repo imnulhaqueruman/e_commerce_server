@@ -10,11 +10,11 @@ function signToken(user) {
   return jwt.sig
     { sub: user._id.toString(), email: user.email },
     process.env.JWT_SECRET,
-    { expiresIn: '7d' },
+    { expiresIn: '7d'
   );
 }
 
-router.post('/registe', asnc (req, res) => 
+router.post('/registe', asnc (req, res) =
   try {
     const { email, password, name } = req.body || {};
     if (!email || !password) {
