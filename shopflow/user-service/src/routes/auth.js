@@ -14,7 +14,7 @@ function signToken(user) {
   );
 }
 
-router.post('/registe', async (req, res) => 
+router.post('/registe', asnc (req, res) => 
   try {
     const { email, password, name } = req.body || {};
     if (!email || !password) {
