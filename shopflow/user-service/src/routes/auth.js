@@ -33,7 +33,7 @@ router.post('/registe', asnc (req, res) =
     const token = signToken(user);
     return res.status(201).json({ token, user: user.toSafeJSON() });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message
   }
 });
 
