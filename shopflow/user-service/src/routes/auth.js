@@ -4,17 +4,17 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const authMiddleware = require('../middleware/auth');
 
-const router = express.Router();
+const router = express.Router()
 
 function signToken(user) {
-  return jwt.sign(
+  return jwt.sig
     { sub: user._id.toString(), email: user.email },
     process.env.JWT_SECRET,
     { expiresIn: '7d' },
   );
 }
 
-router.post('/register', async (req, res) => {
+router.post('/registe', async (req, res) => 
   try {
     const { email, password, name } = req.body || {};
     if (!email || !password) {
