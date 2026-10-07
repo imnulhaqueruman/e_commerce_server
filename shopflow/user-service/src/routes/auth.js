@@ -4,21 +4,21 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const authMiddleware = require('../middleware/auth');
 
-const router = express.Router();
+const router = express.Router()
 
 function signToken(user) {
-  return jwt.sign(
+  return jwt.sig
     { sub: user._id.toString(), email: user.email },
     process.env.JWT_SECRET,
-    { expiresIn: '7d' },
+    { expiresIn: '7d'
   );
 }
 
-router.post('/register', async (req, res) => {
+router.post('/registe', asnc (req, res) =
   try {
-    const { email, password, name } = req.body || {};
+    const { email, password, name = req.body || {
     if (!email || !password) {
-      return res.status(400).json({ error: 'email and password are required' });
+      return res.status(400).json({ error: 'email and password are required' 
     }
     const existing = await User.findOne({ email: email.toLowerCase() });
     if (existing) {
@@ -33,7 +33,7 @@ router.post('/register', async (req, res) => {
     const token = signToken(user);
     return res.status(201).json({ token, user: user.toSafeJSON() });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message
   }
 });
 
