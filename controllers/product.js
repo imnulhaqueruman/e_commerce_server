@@ -139,31 +139,42 @@ exports.update= async(req,res) =>{
 
 /**
  * POST /api/products
- * Body: `{ sort, order, page? }`. Hardcoded `perPage = 3` -- bump this
- * when the product grid moves beyond the demo data set; consider
- * making it part of the request body once you do.
+ * Body: `{ sort?, order?, page?, perPage? }`.
  *
- * Returns `perPage` products starting at `(page-1) * perPage`, sorted
- * by `[[sort, order]]` (e.g. `[['createdAt', 'desc']]`).
+ * Returns `{ items, page, perPage, total }` so the client can render a
+ * real pager. `perPage` defaults to 24 (it used to be hardcoded to 3,
+ * which made the catalogue impossible to page through). `page` defaults
+ * to 1.
+ *
+ * `sort` defaults to `createdAt` and `order` to `desc`, so the endpoint
+ * behaves like "newest first" when called with an empty body.
  */
-// with pagination
-// with pagination
 exports.list = async(req,res) =>{
-   console.table(req.body)
    try{
-      // createdAt updated at desc/asc , 3
-      const{sort,order,page} = req.body;
-      const currentPage = page || 1
-      const perPage = 3
+      const{sort,order,page,perPage} = req.body || {};
+      const currentPage = Math.max(1, parseInt(page,10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(perPage,10) || 24));
+      const sortField = sort || 'createdAt';
+      const sortOrder = order === 'asc' ? 1 : -1;
 
-      const products = await Product.find({})
-      .skip((currentPage - 1) * perPage)
-      .populate('category')
-      .populate('subs')
-      .sort([[sort,order]])
-      .limit(perPage)
-      .exec();
-      res.json(products);
+      const [items, total] = await Promise.all([
+         Product.find({})
+         .skip((currentPage - 1) * pageSize)
+         .populate('category','_id name')
+         .populate('subs','_id name')
+         .sort([[sortField, sortOrder]])
+         .limit(pageSize)
+         .exec(),
+         Product.countDocuments({}),
+      ]);
+
+      res.json({
+         items,
+         page: currentPage,
+         perPage: pageSize,
+         total,
+         totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      });
    }
    catch(err){
       console.log(err)
@@ -233,202 +244,131 @@ exports.productStar = async(req,res) =>{
 /**
  * GET /api/product/related/:productId -- public.
  * Returns up to 3 products in the same category, excluding the source
- * product. Comparison uses `product.category.name` (a populated string),
- * not the ObjectId -- relies on `category` being populated upstream.
- * Has no try/catch; hangs on DB error.
+ * product. The category is matched by ObjectId -- the source product's
+ * `category` field holds an ObjectId, not a populated name, so comparing
+ * against `product.category.name` (as this used to) compared against
+ * `undefined` and matched nothing meaningful.
  */
 exports.listRelated = async(req,res) =>{
-   const product = await Product.findById(req.params.productId).exec();
-   const related = await Product.find({
-      _id:{$ne : product._id},
-      category:product.category.name,
-
-   })
-      .limit(3)
-      .populate("category")
-      .populate("subs")
-      .populate("postedBy")
-      .exec()
-   res.json(related)
-
-}
-// The 7 `handle*` helpers below are dispatched by `searchFilters` based
-// on which keys are present in `req.body`. They all `.populate()` the
-// same three references (`category`, `subs`, `postedBy`) -- keep that
-// shape consistent when adding new handlers so the client doesn't have
-// to defend against missing fields.
-// search // Filter
-
- // Free-text search via Mongo's `$text` index. Requires the Product
-// schema to declare a text index -- see `models/product.js`. Returns
-// results sorted by relevance (the default for $text queries).
- const handleQuery = async(req,res,query) =>{
-   const products = await Product.find({$text: { $search: query}})
-      .populate('category','_id name')
-      .populate('subs','_id name')
-      .populate('postedBy', '_id name')
-      .exec();
-   res.json(products);
-}
-
-// `price` is `[min, max]` (inclusive on both ends). Uses `$gte`/`$lte`.
-// Because Product.price is a String in the schema, the comparison is
-// lexicographic -- works for fixed-decimal strings (e.g. "12.99") but
-// not for unsorted formats ("5", "100.00" -> "5" sorts after "100").
-// Acceptable for this app's price entry pattern; document the
-// assumption if you change the input format.
-const handlePrice = async(req,res,price) =>{
-    try{
-       let products = await Product.find({
-          price:{
-             $gte:price[0], 
-             $lte:price[1],
-          }
-          })
-            .populate('category','_id name')
-            .populate('subs','_id name')
-            .populate('postedBy', '_id name')
-            .exec();
-         res.json(products)
-
-    } catch (err){
-       console.log(err)
-    }
-}
-// Filters by `category` ObjectId directly (no populate here). The
-// client must send the ObjectId, not the slug, for this handler.
-const handleCategory = async(req,res,category) =>{
    try{
-      let products = await Product.find({category})
-         .populate('category','_id name')
-         .populate('subs','_id name')
-         .populate('postedBy', '_id name')
-         .exec();
-      res.json(products)
+      const product = await Product.findById(req.params.productId).exec();
 
+      if (!product) {
+         return res.status(404).json({ err: 'Product not found' });
+      }
 
-   }catch(err){
+      const related = await Product.find({
+         _id:{$ne : product._id},
+         category:product.category,
+
+      })
+         .limit(3)
+         .populate("category",'_id name')
+         .populate("subs",'_id name')
+         .populate("postedBy",'_id name')
+         .exec()
+      return res.json(related)
+   } catch(err){
       console.log(err)
+      return res.status(500).json({ err: 'Failed to load related products' })
    }
-}
-// Filters products whose *floor-average* rating equals `stars`. Uses
-// `$project` + `$floor` + `$avg` aggregation, then a second `find` to
-// hydrate the matching ids. Callback-style API (mongoose@5) -- fine
-// here, but consider migrating to await for any new handlers.
-//
-// Limit 12 keeps the second-stage `Product.find` cheap.
-const  handleStars = (req,res,stars) =>{
-   Product.aggregate([
-      {
-         $project:{
-            document: "$$ROOT",
-            floorAverage:{
-               $floor:{$avg: "$ratings.star"}
-            }
-         },
-      },
-      {$match : {floorAverage: stars} }
-   ])
-   .limit(12)
-   .exec((err,aggregates) =>{
-      if(err) console.log('AGGREGATES ERROR', err)
-      Product.find({_id:aggregates})
-      .populate('category','_id name')
-      .populate('subs','_id name')
-      .populate('postedBy', '_id name')
-      .exec((err,products) =>{
-         if(err) console.log('product aggregates error', err)
-         res.json(products)
-      });
 
-   });
+}
+// The `handle*` helpers that used to live here were dispatched one-by-one
+// by `searchFilters`, and only the FIRST matching handler responded -- so a
+// request carrying both `query` and `price` silently ignored the price
+// filter. `searchFilters` now composes every supplied filter into a single
+// `$and` query instead, so filters narrow each other.
 
-};
-// Filters by `subs` ObjectId membership (`subs` is an array on the
-// schema). Client must send the sub ObjectId.
-const handleSub = async(req,res,sub) =>{
-   const products = await Product.find({subs:sub})
-   .populate('category','_id name')
-   .populate('subs','_id name')
-   .populate('postedBy', '_id name')
-   .exec();
-   res.json(products);
-}
-// Boolean filter on the `shipping` field (e.g. "Yes"/"No" depending on
-// what the admin form stores).
-const handleShipping = async(req,res,shipping) =>{
-  const products = await Product.find({shipping})
-  .populate('category','_id name')
-  .populate('subs','_id name')
-  .populate('postedBy', '_id name')
-  .exec();
-  res.json(products)
-}
-// Exact-match filter on the `color` field.
-const handleColor = async(req,res,color) =>{
-   const products = await Product.find({color})
-  .populate('category','_id name')
-  .populate('subs','_id name')
-  .populate('postedBy', '_id name')
-  .exec();
-  res.json(products)
-}
-// Exact-match filter on the `brand` field.
-const handleBrand = async(req,res,brand) =>{
-   const products = await Product.find({brand})
-  .populate('category','_id name')
-  .populate('subs','_id name')
-  .populate('postedBy', '_id name')
-  .exec();
-  res.json(products)
-}
 /**
  * POST /api/search/filters -- public.
  * Body: any subset of `{ query, price, category, stars, sub, shipping, color, brand }`.
  *
- * IMPORTANT -- the dispatch is sequential `await` calls, and only the
- * FIRST matching handler responds to the client. If `query` and `price`
- * are both present, `query` wins and `price` is ignored. This is a known
- * limitation of the current shape; combine filters by either composing
- * a single Mongo `$and` here or by orchestrating on the client.
+ * Every supplied filter is combined into ONE Mongo query (`$and`), so
+ * filters narrow each other instead of overriding one another.
+ *
+ * `stars` is special: it matches products whose *floor-average* rating
+ * equals the requested value. That needs an aggregation, so it runs first
+ * to resolve a set of matching ids, and the remaining filters are then
+ * applied to those ids.
  */
 exports.searchFilters = async(req,res) =>{
-          const {query,price,category,stars,sub,shipping,color, brand} = req.body;
+  const {query,price,category,stars,sub,shipping,color, brand} = req.body || {};
 
-          if(query){
-             console.log('query',query)
-             await handleQuery(req,res,query);
-          }
+  const clauses = [];
 
-          // price[20,200]
-          if(price !== undefined){
-               console.log('price--->', price)
-               await handlePrice(req,res,price);
-          }
+  if (query) {
+    clauses.push({$text: { $search: query}});
+  }
 
-          if(category){
-             console.log('category-->', category)
-             await handleCategory(req,res,category)
-          }
-          if(stars){
-            console.log('stars-->', stars)
-            await handleStars(req,res,stars)
-          }
+  // price[20,200] -- guard against a malformed or inverted range.
+  if (price !== undefined && Array.isArray(price) && price.length === 2) {
+    const [min, max] = price;
+    if (Number.isFinite(Number(min)) && Number.isFinite(Number(max))) {
+      clauses.push({price: {$gte: Number(min), $lte: Number(max)}});
+    }
+  }
 
-          if(sub){
-            console.log('sub-->', sub)
-            await handleSub(req,res,sub)
-          }
-          if(shipping){
-            console.log('shipping-->', shipping)
-            await handleShipping(req,res,shipping)
-          }
-          if(color){
-            console.log('color-->', color)
-            await handleColor(req,res,color)
-          }
-          if(brand){
-            console.log('brand-->',brand)
-            await handleBrand(req,res,brand)
-          }
+  if (category) {
+    clauses.push({category});
+  }
+
+  if (sub) {
+    clauses.push({subs: sub});
+  }
+
+  if (shipping) {
+    clauses.push({shipping});
+  }
+
+  if (color) {
+    clauses.push({color});
+  }
+
+  if (brand) {
+    clauses.push({brand});
+  }
+
+  try {
+    // `stars` needs an aggregation to compute the floor-average, so it
+    // resolves to a set of product ids that the main query then filters.
+    if (stars !== undefined && stars !== null) {
+      const aggregates = await Product.aggregate([
+         {
+            $project:{
+               document: "$$ROOT",
+               floorAverage:{
+                  $floor:{$avg: "$ratings.star"}
+               }
+            },
+         },
+         {$match : {floorAverage: Number(stars)} },
+         {$project: {_id: 1}},
+      ]);
+
+      const starIds = aggregates.map((a) => a._id);
+
+      // No product matches this rating. An empty `$in` set would match
+      // nothing, but short-circuiting is clearer and avoids the query.
+      if (starIds.length === 0) {
+        return res.json([]);
+      }
+
+      clauses.push({_id: {$in: starIds}});
+    }
+
+    const filter = clauses.length > 0 ? {$and: clauses} : {};
+
+    const products = await Product.find(filter)
+       .populate('category','_id name')
+       .populate('subs','_id name')
+       .populate('postedBy', '_id name')
+       .exec();
+
+    return res.json(products);
+  } catch (err) {
+    console.log('searchFilters error', err);
+    return res.status(500).json({ err: 'Search failed' });
+  }
 }
+

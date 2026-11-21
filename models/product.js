@@ -12,7 +12,10 @@ const ProductSchema = new mongoose.Schema({
     slug:{
         type:String,
         unique:true,
-        lowercase:32,
+        // `lowercase: 32` was invalid -- the option takes a boolean, so the
+        // value was truthy but the intended maxlength was silently dropped.
+        lowercase:true,
+        maxlength:64,
         index:true,
     },
     description:{
@@ -22,10 +25,14 @@ const ProductSchema = new mongoose.Schema({
         text:true,
     },
     price:{
-        type: String,
+        // A Number, not a String. Storing prices as strings made range
+        // filters and sorts lexicographic ("5" sorted after "100.00").
+        // Run `node scripts/migrate-price-to-number.js` after upgrading an
+        // existing database.
+        type: Number,
         required:true,
         trim:true,
-        maxlength:32,
+        min:0,
     },
     category:{
         type:ObjectId,

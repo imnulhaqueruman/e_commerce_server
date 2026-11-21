@@ -15,6 +15,14 @@ const Product = require('../models/product');
 const Coupon = require('../models/coupon');
 const stripe = require('stripe')(process.env.Stripe_Secret);
 
+/**
+ * The canonical order-status vocabulary.
+ *
+ * This is the single source of truth: it matches the `enum` on
+ * `models/order.js` and the values the admin UI sends. The set is
+ * case-sensitive — `processing` is lowercase because that is what the
+ * Order schema declares.
+ */
 const ALLOWED_STATUSES = new Set([
   'Not Processed',
   'processing',
@@ -23,6 +31,9 @@ const ALLOWED_STATUSES = new Set([
   'Completed',
   'Refunded',
 ]);
+
+/** Exported so the client contract is documented in one place. */
+exports.ALLOWED_STATUSES = Array.from(ALLOWED_STATUSES);
 
 /**
  * GET /admin/orders

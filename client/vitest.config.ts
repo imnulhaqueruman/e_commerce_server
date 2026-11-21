@@ -16,5 +16,9 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
+    // A hung test must fail fast instead of blocking the whole run.
+    testTimeout: 10000,
+    hookTimeout: 10000,
+    teardownTimeout: 5000,
   },
 });

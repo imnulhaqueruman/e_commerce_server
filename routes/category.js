@@ -16,9 +16,11 @@ const express = require('express');
  * Mutating endpoints require a valid JWT (`requireAuth`) AND the
  * authenticated user must have `role === 'admin'` (`requireAdmin`).
  *
- * Two layered handlers at the bottom — a JSON 404 catch-all and a JSON
- * 500 error passthrough — keep category responses JSON-shaped even when
- * no route matches or a downstream handler throws.
+ * NOTE: this router must NOT contain a path-less `router.use()` catch-all.
+ * Such a layer matches EVERY path (see `node_modules/express/lib/router/layer.js`
+ * fast-slash branch) and, because this file is mounted 3rd of the auto-mount
+ * scan, it would swallow every route mounted after it. The JSON 404 / 500
+ * handlers live at the app level in `server.js` instead.
  */
 const router = express.Router();
 
@@ -44,19 +46,5 @@ router.get('/category/:slug', read);
 router.post('/category', requireAuth, requireAdmin, create);
 router.put('/category/:slug', requireAuth, requireAdmin, update);
 router.delete('/category/:slug', requireAuth, requireAdmin, remove);
-
-// ---- 404 catch-all (JSON) -------------------------------------------------
-router.use((req, res) => {
-  res.status(404).json({ err: 'Not found' });
-});
-
-// ---- Error handler (JSON) -------------------------------------------------
-// Any handler that calls `next(err)` lands here. The default Express
-// handler returns HTML — we want JSON to match the rest of the API.
-router.use((err, req, res, _next) => {
-  // eslint-disable-next-line no-console
-  console.error('[category route error]', err);
-  res.status(500).json({ err: 'Category route error' });
-});
 
 module.exports = router;

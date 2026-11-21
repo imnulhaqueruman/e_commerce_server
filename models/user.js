@@ -12,6 +12,10 @@ const userSchema = new mongoose.Schema(
         },
         password: {
             type: String,
+            // Never included in a query result by default. `login` uses
+            // `.select('+password')` to opt back in for comparison, and
+            // `controllers/auth.js#sanitizeUser` strips it from responses.
+            select: false,
         },
         role:{
             type:String,

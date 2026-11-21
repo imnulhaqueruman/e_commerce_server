@@ -5,13 +5,27 @@ process.env.NODE_ENV = 'test';
 // Mock the User model. User is a class; controllers call it via `new`.
 // We expose query helpers (findOne, findOneAndUpdate) that return objects
 // with an `exec()` method to match the way Mongoose queries are awaited.
+//
+// `findOne` returns a chainable query so `.select('+password')` works —
+// the controller opts the password field back in for the bcrypt comparison.
 jest.mock('../../models/user', () => {
   const MockUser = jest.fn().mockImplementation(function (doc) {
     Object.assign(this, doc);
     this.save = jest.fn().mockResolvedValue(this);
   });
   // query helper: returns { exec: () => Promise.resolve(value) }
-  const makeExec = (value) => ({ exec: () => Promise.resolve(value) });
+  const makeExec = (value) => {
+    const q = {
+      exec: jest.fn(() => Promise.resolve(value)),
+      select: jest.fn(function () {
+        return q;
+      }),
+      populate: jest.fn(function () {
+        return q;
+      }),
+    };
+    return q;
+  };
   MockUser.findOne = jest.fn(() => makeExec(null));
   MockUser.findOneAndUpdate = jest.fn();
   // expose helper for tests
@@ -165,6 +179,30 @@ describe('controllers/auth.js', () => {
       expect(payload.user.email).toBe('a@b.com');
     });
 
+    it('opts the password field back in for the bcrypt comparison', async () => {
+      const hash = await bcrypt.hash('secret123', 4);
+      User.findOne.mockImplementation(() =>
+        User.__execResult({
+          email: 'a@b.com',
+          name: 'A',
+          role: 'subscribe',
+          password: hash,
+          toObject() {
+            return { ...this };
+          },
+        })
+      );
+
+      const res = mockRes();
+      await auth.login(
+        { body: { email: 'a@b.com', password: 'secret123' } },
+        res,
+      );
+
+      const query = User.findOne.mock.results[0].value;
+      expect(query.select).toHaveBeenCalledWith('+password');
+    });
+
     it('returns 401 when the user has no password (Firebase-only account)', async () => {
       User.findOne.mockImplementation(() =>
         User.__execResult({
@@ -254,62 +292,6 @@ describe('controllers/auth.js', () => {
     });
   });
 
-  describe('createOrUpdateUser', () => {
-    it('creates a new user when none exists, normalizing the name', async () => {
-      User.findOneAndUpdate.mockImplementation(() => User.__directResult(null));
-
-      const res = mockRes();
-      await auth.createOrUpdateUser(
-        {
-          user: {
-            email: 'fb@example.com',
-            name: 'Firebase User',
-            picture: 'https://example.com/p.png',
-          },
-        },
-        res,
-      );
-
-      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-        { email: 'fb@example.com' },
-        { name: 'fb', picture: 'https://example.com/p.png' },
-        { new: true },
-      );
-      expect(lastInstance()).toBeDefined();
-      expect(lastInstance().name).toBe('fb');
-      expect(lastInstance().save).toHaveBeenCalledTimes(1);
-    });
-
-    it('updates an existing user without creating a duplicate', async () => {
-      const existing = {
-        email: 'fb@example.com',
-        name: 'fb',
-        picture: 'old',
-      };
-      User.findOneAndUpdate.mockImplementation(() => User.__directResult(existing));
-
-      const res = mockRes();
-      await auth.createOrUpdateUser(
-        {
-          user: {
-            email: 'fb@example.com',
-            name: 'Firebase User',
-            picture: 'https://example.com/p.png',
-          },
-        },
-        res,
-      );
-
-      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-        { email: 'fb@example.com' },
-        { name: 'fb', picture: 'https://example.com/p.png' },
-        { new: true },
-      );
-      expect(res.json).toHaveBeenCalledWith(existing);
-      expect(User).not.toHaveBeenCalled();
-    });
-  });
-
   describe('currentUser', () => {
     it('returns the user document for the authenticated email', async () => {
       const doc = { email: 'a@b.com', name: 'A', role: 'subscribe' };
@@ -320,6 +302,26 @@ describe('controllers/auth.js', () => {
 
       expect(User.findOne).toHaveBeenCalledWith({ email: 'a@b.com' });
       expect(res.json).toHaveBeenCalledWith(doc);
+    });
+
+    it('never leaks the password hash to the client', async () => {
+      const doc = {
+        email: 'a@b.com',
+        name: 'A',
+        role: 'subscribe',
+        password: '$2a$10$hashedvalue',
+        toObject() {
+          return { ...this };
+        },
+      };
+      User.findOne.mockImplementation(() => User.__execResult(doc));
+
+      const res = mockRes();
+      await auth.currentUser({ user: { email: 'a@b.com' } }, res);
+
+      const payload = res.json.mock.calls[0][0];
+      expect(payload.password).toBeUndefined();
+      expect(payload.email).toBe('a@b.com');
     });
 
     it('returns 500 when the lookup throws', async () => {

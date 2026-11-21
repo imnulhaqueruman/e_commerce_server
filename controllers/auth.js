@@ -1,13 +1,13 @@
 /**
  * Authentication controller.
  *
- * Two parallel flows share this file:
- *  - JWT (used by the React client): register / login / logout / currentUser
- *    issue `Authorization: Bearer <token>` headers verified by
- *    `middlewares/jwt.js#requireAuth`.
- *  - Legacy Firebase: `createOrUpdateUser` is still mounted on
- *    `POST /api/create-or-update-user` for backwards compat; it expects
- *    `req.user` to already be populated by `middlewares/auth#authCheck`.
+ * JWT-based only: register / login / logout / currentUser. Tokens are issued
+ * as `Authorization: Bearer <token>` headers and verified by
+ * `middlewares/jwt.js#requireAuth`.
+ *
+ * The legacy Firebase path was removed — it required a service-account JSON
+ * at module load, which crashed the production Docker image (the image
+ * strips that file on purpose).
  *
  * Tokens issued here are valid for 7 days (`expiresIn: '7d'`); tweak in
  * `signToken` if you ever change this — the client re-logins on expiry.
@@ -27,9 +27,8 @@ const signToken = (user) =>
   });
 
 // Strip the bcrypt hash from whatever's about to be sent back to the
-// client. The User model also declares `select: false` on `password`,
-// so this is belt-and-suspenders for the path where `password` was
-// explicitly selected (none today, but worth keeping).
+// client. The User model declares `select: false` on `password`, so this is
+// belt-and-suspenders for paths where `password` was explicitly selected.
 const sanitizeUser = (user) => {
   if (!user) return null;
   const obj = user.toObject ? user.toObject() : { ...user };
@@ -83,7 +82,10 @@ exports.login = async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ err: 'Email and password are required' });
     }
-    const user = await User.findOne({ email }).exec();
+    // `password` is `select: false` on the schema, so opt back in for the
+    // bcrypt comparison. Without `+password` this is always undefined and
+    // every login fails.
+    const user = await User.findOne({ email }).select('+password').exec();
     if (!user || !user.password) {
       return res.status(401).json({ err: 'Invalid email or password' });
     }
@@ -108,45 +110,15 @@ exports.logout = async (_req, res) => {
 };
 
 /**
- * LEGACY — Firebase-only path. Mounted on
- * POST /api/create-or-update-user behind `authCheck` (see routes/auth.js).
- * `req.user` is already populated by the Firebase middleware before we get
- * here. Behaves as an upsert keyed on `email` and ignores passwords
- * because Firebase owns them.
- *
- * Remove this endpoint (and the authCheck/adminCheck wiring in
- * `routes/auth.js`) once no callers remain — see CLAUDE.md.
- */
-exports.createOrUpdateUser = async (req, res) => {
-  const { name, email, picture } = req.user;
-  const user = await User.findOneAndUpdate(
-    { email },
-    { name: email.split('@')[0], picture },
-    { new: true }
-  );
-  if (user) {
-    console.log('User Updated', user);
-    return res.json(user);
-  }
-  const newUser = await new User({
-    email,
-    name: email.split('@')[0],
-    picture,
-  }).save();
-  console.log('User Created', newUser);
-  return res.json(newUser);
-};
-
 /**
- * GET /api/auth/current-user (JWT) and POST /api/current-user (Firebase).
+ * GET /api/auth/current-user.
  * Returns the User doc keyed by `req.user.email` set by the upstream
- * middleware. The Firebase variant returns the full doc including the
- * firebase-derived fields; the JWT variant does the same minus password.
+ * middleware. The password hash is stripped — see `sanitizeUser`.
  */
 exports.currentUser = async (req, res) => {
   try {
     const user = await User.findOne({ email: req.user.email }).exec();
-    return res.json(user);
+    return res.json(sanitizeUser(user));
   } catch (err) {
     console.error(err);
     return res.status(500).json({ err: 'Failed to fetch user' });

@@ -41,9 +41,9 @@ const stripe = require('stripe')(process.env.Stripe_Secret)
  * complete payment. The bKash replacement will return a
  * `bkashPaymentID` (or a redirect URL) here instead.
  *
- * NOTE — the catch block logs but does not respond. Mongoose 5 quirks
- * aside, every other controller returns 500 on error so clients don't
- * time out. Fix that as part of the bKash rewrite.
+ * NOTE — the catch block used to log but not respond, which left the
+ * request hanging until the client timed out. It now answers 500 like
+ * every other controller.
  */
 exports.createPaymentIntent = async(req,res) =>{
     try{
@@ -76,6 +76,7 @@ exports.createPaymentIntent = async(req,res) =>{
         })
     } catch(err){
       console.log(err)
+      return res.status(500).json({ err: 'Failed to create payment intent' })
     }
     
 }

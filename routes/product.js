@@ -4,7 +4,6 @@ const router = express.Router();
 
 // middleWares
 
-const {authCheck,adminCheck} = require('../middlewares/auth')
 const {requireAuth,requireAdmin} = require('../middlewares/jwt')
 
 // controller
