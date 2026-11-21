@@ -2,7 +2,7 @@ const mongoose = require('mongoose')
 
 const{ObjectId} = mongoose.Schema;
 
-const userSchema = new mongoose.Schema(
+const userSchema = new mongoose.Schema
     {
         name:String,
         email: {
@@ -16,7 +16,6 @@ const userSchema = new mongoose.Schema(
             // `.select('+password')` to opt back in for comparison, and
             // `controllers/auth.js#sanitizeUser` strips it from responses.
             select: false,
-        },
         role:{
             type:String,
             default:'subscribe',
