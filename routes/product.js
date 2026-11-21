@@ -7,12 +7,14 @@ const router = express.Router();
 const {requireAuth,requireAdmin} = require('../middlewares/jwt')
 
 // controller
-const {create,listAll,remove,read,update,list,productsCount,productStar,listRelated,searchFilters} = require('../controllers/product');
+const {create,listAll,remove,read,update,list,productsCount,productStar,listRelated,searchFilters,bulkCreate} = require('../controllers/product');
 
 
 
 //routes
 router.post('/product',requireAuth,requireAdmin,create);
+// bulk import
+router.post('/product/bulk',requireAuth,requireAdmin,bulkCreate);
 router.get('/products/total', productsCount)
 router.get('/products/:count',listAll); //products/100
 router.delete('/product/:slug', requireAuth,requireAdmin,remove);

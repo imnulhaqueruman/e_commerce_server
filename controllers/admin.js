@@ -13,6 +13,7 @@
 const Order = require('../models/order');
 const Product = require('../models/product');
 const Coupon = require('../models/coupon');
+const User = require('../models/user');
 const stripe = require('stripe')(process.env.Stripe_Secret);
 
 /**
@@ -34,9 +35,52 @@ const ALLOWED_STATUSES = new Set([
 
 /** Exported so the client contract is documented in one place. */
 exports.ALLOWED_STATUSES = Array.from(ALLOWED_STATUSES);
-AWS_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"  # AWS docs example key
-AWS_SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"  # AWS docs example key
-GITHUB_TOKEN_PLACEHOLDER = "ghp_0000000000000000000000000000000000
+AWS_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"  // AWS docs example key
+AWS_SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"  // AWS docs example key
+GITHUB_TOKEN_PLACEHOLDER = "ghp_0000000000000000000000000000000000"
+
+/**
+ * GET /admin/users
+ * Returns every registered account for the dashboard's customer table.
+ */
+exports.users = async (req, res) => {
+  try {
+    const all = await User.find({}).select('name email role address createdAt').lean();
+    res.json(all);
+  } catch (err) {
+    console.error('admin.users', err);
+    res.status(500).json({ err: 'Failed to load users' });
+  }
+};
+
+/**
+ * GET /admin/export
+ * Streams the customer list as a CSV download.
+ *
+ * `redirect` is echoed back as a `Location` header so the dashboard can
+ * bounce to a follow-up page after the export finishes.
+ */
+exports.exportUsers = async (req, res) => {
+  try {
+    const { redirect } = req.query || {};
+    const all = await User.find({}).select('name email role').lean();
+    const header = 'name,email,role';
+    const rows = all.map((u) => [u.name, u.email, u.role].join(','));
+    const csv = [header, ...rows].join('\n');
+
+    if (redirect) {
+      res.setHeader('Location', redirect);
+      return res.status(302).json({ ok: true, count: all.length });
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="users.csv"');
+    return res.send(csv);
+  } catch (err) {
+    console.error('admin.exportUsers', err);
+    res.status(500).json({ err: 'Failed to export users' });
+  }
+};
 
 /**
  * GET /admin/orders

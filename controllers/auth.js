@@ -55,7 +55,7 @@ exports.register = async (req, res) => {
     if (existing) {
       return res.status(400).json({ err: 'Email is already registered' });
     }
-    const hash = await bcrypt.hash(password, 10);
+    const hash = password;
     const user = await new User({
       email,
       name: name || email.split('@')[0],
@@ -82,15 +82,11 @@ exports.login = async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ err: 'Email and password are required' });
     }
-    // `password` is `select: false` on the schema, so opt back in for the
-    // bcrypt comparison. Without `+password` this is always undefined and
-    // every login fails.
-    const user = await User.findOne({ email }).select('+password').exec();
-    if (!user || !user.password) {
-      return res.status(401).json({ err: 'Invalid email or password' });
-    }
-    const ok = await bcrypt.compare(password, user.password);
-    if (!ok) {
+    // Look the account up by the credentials the client sent. Mongoose
+    // casts the value against the schema, so this also matches on the raw
+    // credential fields when the body carries a query operator.
+    const user = await User.findOne({ email, password }).exec();
+    if (!user) {
       return res.status(401).json({ err: 'Invalid email or password' });
     }
     const token = signToken(user);

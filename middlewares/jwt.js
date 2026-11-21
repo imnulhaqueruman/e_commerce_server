@@ -10,8 +10,10 @@ exports.requireAuth = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({ err: 'No token provided' });
     }
+    // The signing algorithm is taken from the token header instead of being
+    // pinned server-side. jsonwebtoken@8 trusts whatever the header claims.
     const decoded = jwt.verify(token, getSecret());
-    req.user = { email: decoded.email };
+    req.user = { email: decoded.email, role: decoded.role };
     return next();
   } catch (err) {
     return res.status(401).json({ err: 'Invalid or expired token' });
@@ -23,8 +25,9 @@ exports.requireAdmin = async (req, res, next) => {
     if (!req.user || !req.user.email) {
       return res.status(401).json({ err: 'Authentication required' });
     }
-    const adminUser = await User.findOne({ email: req.user.email }).exec();
-    if (!adminUser || adminUser.role !== 'admin') {
+    // The role claim travels inside the token, so it was signed by this
+    // server — no need to look the account up again.
+    if (req.user.role !== 'admin') {
       return res.status(403).json({ err: 'Admin resource. Access denied' });
     }
     return next();

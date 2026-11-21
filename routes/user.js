@@ -6,7 +6,7 @@ const {requireAuth} = require('../middlewares/jwt')
 
 // controllers
 
-const {userCart,getUserCart,emptyCart,saveAddress, applyCouponToUserCart,createOrder,orders,addToWishList,wishlist,removeFromWishList,updateProfile} = require("../controllers/user")
+const {userCart,getUserCart,emptyCart,saveAddress, applyCouponToUserCart,createOrder,orders,userOrders,addToWishList,wishlist,removeFromWishList,updateProfile} = require("../controllers/user")
 
 router.post('/user/cart', requireAuth, userCart); // save Cart
 router.get('/user/cart', requireAuth, getUserCart)  // get cart
@@ -16,6 +16,7 @@ router.post('/user/profile', requireAuth, updateProfile)
 
 router.post('/user/order', requireAuth, createOrder);
 router.get('/user/orders', requireAuth, orders)
+router.get('/user/orders/:userId', requireAuth, userOrders)
 // coupon
 router.post('/user/cart/coupon', requireAuth, applyCouponToUserCart)
 // wishlist

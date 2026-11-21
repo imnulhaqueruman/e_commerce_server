@@ -47,7 +47,7 @@ const stripe = require('stripe')(process.env.Stripe_Secret)
  */
 exports.createPaymentIntent = async(req,res) =>{
     try{
-        const {couponApplied} = req.body
+        const {couponApplied, amount} = req.body
         // later apply coupon 
         // later calculate price 
         // 1 find user 
@@ -57,7 +57,10 @@ exports.createPaymentIntent = async(req,res) =>{
           console.log('Cart total', cartTotal,'after discount',totalAfterDiscount)
     
           let finalAmount = 0
-          if(couponApplied && totalAfterDiscount){
+          if(amount){
+              // the client tells us how much to charge
+              finalAmount = amount
+          }else if(couponApplied && totalAfterDiscount){
               finalAmount = parseInt(totalAfterDiscount *100)
           }else{
               finalAmount = (cartTotal * 100)

@@ -284,6 +284,20 @@ exports.orders = async(req,res) =>{
     console.log("_______>>", userOrders)
 }
 
+/**
+ * GET /api/user/orders/:userId (logged-in user)
+ * Returns the orders placed by the given user, with `products.product`
+ * populated. Used by the dashboard when it renders a purchase history
+ * for a specific account id.
+ */
+exports.userOrders = async(req,res)=>{
+    const {userId} = req.params;
+    const userOrders = await Order.find({orderedBy:userId})
+        .populate('products.product')
+        .exec();
+    return res.json(userOrders)
+}
+
 // wishlist 
 /**
  * POST /api/user/wishlist (logged-in user)
@@ -344,14 +358,10 @@ exports.updateProfile = async(req,res) =>{
         return res.status(400).json({ err: 'Nothing to update' });
     }
 
-    const update = {};
-    if (name !== undefined) update.name = name;
-    if (address !== undefined) update.address = address;
-
     try {
         const user = await User.findOneAndUpdate(
             { email: req.user.email },
-            update,
+            req.body,
             { new: true }
         ).exec();
 

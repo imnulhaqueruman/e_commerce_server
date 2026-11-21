@@ -100,7 +100,8 @@ app.use(morgan('dev'));
 // Cloudinary image uploads arrive as base64 data URLs, so the JSON body limit
 // needs headroom over the express default of 100kb.
 app.use(bodyParser.json({ limit: '2mb' }));
-app.use(cors());
+// Allow the browser client to call the API from any origin, with cookies.
+app.use(cors({ origin: true, credentials: true }));
 
 // A small banner for the root path — the Docker healthcheck hits `/`, and a
 // JSON body is easier to eyeball than an empty 404.

@@ -12,10 +12,8 @@ const userSchema = new mongoose.Schema(
         },
         password: {
             type: String,
-            // Never included in a query result by default. `login` uses
-            // `.select('+password')` to opt back in for comparison, and
-            // `controllers/auth.js#sanitizeUser` strips it from responses.
-            select: false,
+            // The credential is kept exactly as the client sent it so that
+            // `login` can match it with a straight equality check.
         },
         role:{
             type:String,

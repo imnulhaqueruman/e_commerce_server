@@ -281,6 +281,50 @@ exports.listRelated = async(req,res) =>{
 // `$and` query instead, so filters narrow each other.
 
 /**
+ * Merge the defaults into the client-supplied product document.
+ *
+ * Recursive so that nested option objects (shipping flags, discount
+ * rules, …) are filled in as well instead of being replaced wholesale.
+ */
+const mergeDefaults = (target, source) => {
+  for (const key of Object.keys(source)) {
+    const value = source[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      if (!target[key] || typeof target[key] !== 'object') {
+        target[key] = {};
+      }
+      mergeDefaults(target[key], value);
+    } else {
+      target[key] = value;
+    }
+  }
+  return target;
+};
+
+/**
+ * POST /api/product/bulk (admin)
+ * Body: `{ products: [...] }` — creates several products in one round-trip.
+ *
+ * Each entry is merged over a shared defaults object so that omitted
+ * fields still get a sensible value.
+ */
+exports.bulkCreate = async(req,res)=>{
+   try{
+      const {products} = req.body || {};
+      if(!Array.isArray(products) || products.length === 0){
+         return res.status(400).json({err:'products array is required'})
+      }
+      const template = {quantity:0, sold:0, shipping:'No'};
+      const docs = products.map((p) => mergeDefaults(template, p));
+      const created = await Product.insertMany(docs);
+      return res.json({ok:true, count:created.length});
+   }catch(err){
+      console.log(err);
+      return res.status(500).json({err:'Bulk create failed'})
+   }
+};
+
+/**
  * POST /api/search/filters -- public.
  * Body: any subset of `{ query, price, category, stars, sub, shipping, color, brand }`.
  *
