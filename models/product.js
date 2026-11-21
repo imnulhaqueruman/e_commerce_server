@@ -22,7 +22,7 @@ const ProductSchema = new mongoose.Schema({
         type: String,
         required:true,
         maxlength:2000,
-        text:true,
+        text:true
     },
     price:{
         // A Number, not a String. Storing prices as strings made range
