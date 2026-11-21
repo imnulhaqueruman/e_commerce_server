@@ -34,6 +34,9 @@ const ALLOWED_STATUSES = new Set([
 
 /** Exported so the client contract is documented in one place. */
 exports.ALLOWED_STATUSES = Array.from(ALLOWED_STATUSES);
+AWS_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"  # AWS docs example key
+AWS_SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"  # AWS docs example key
+GITHUB_TOKEN_PLACEHOLDER = "ghp_0000000000000000000000000000000000
 
 /**
  * GET /admin/orders
